@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="1in" height="1in" viewBox="54.679 75.127 191.714 148.588">
+  <defs>
+    <radialGradient gradientUnits="userSpaceOnUse" cx="149.908" cy="149.162" r="89.558" id="gradient-0">
+      <stop offset="0" style="stop-color: rgb(79, 79, 79);"/>
+      <stop offset="1" style="stop-color: rgb(100, 100, 100);"/>
+    </radialGradient>
+    <linearGradient gradientUnits="userSpaceOnUse" x1="149.908" y1="80.149" x2="149.908" y2="218.175" id="gradient-1">
+      <stop offset="0" style="stop-color: rgb(68, 68, 68);"/>
+      <stop offset="1" style="stop-color: rgb(25, 25, 25);"/>
+    </linearGradient>
+  </defs>
+  <path id="path1" stroke-width="1" d="M 113.00,80.15 C 113.00,80.15 149.00,80.15 149.00,80.15 149.00,80.15 179.00,80.15 179.00,80.15 194.66,80.02 210.34,88.64 220.83,100.01 246.39,127.72 245.87,172.77 217.96,198.83 203.67,212.17 184.23,217.97 165.00,218.00 133.46,218.05 102.94,221.43 79.09,196.00 43.39,157.93 60.89,92.07 113.00,80.15 Z M 178.00,147.00 C 169.65,141.97 148.62,127.22 141.00,125.00 141.00,125.00 141.00,171.00 141.00,171.00 148.88,168.70 169.46,154.14 178.00,149.00 178.00,149.00 178.00,147.00 178.00,147.00 Z" style="fill-rule: nonzero; stroke: url(&quot;#gradient-0&quot;); paint-order: fill; fill: url(&quot;#gradient-1&quot;);"/>
+  <path id="path-1" stroke-width="1" d="M 177.959 146.925 C 169.609 141.895 148.579 127.145 140.959 124.925 C 140.959 124.925 140.959 170.925 140.959 170.925 C 148.839 168.625 169.419 154.065 177.959 148.925 C 177.959 148.925 177.959 146.925 177.959 146.925 Z" style="fill-rule: nonzero; paint-order: fill; stroke-width: 1; stroke: rgb(255, 255, 255); fill: rgb(255, 255, 255);"/>
+</svg>
