@@ -60,14 +60,21 @@ async function fetchText(url: string, init?: RequestInit): Promise<string> {
     return await res.text();
   } catch (err) {
     if (typeof window !== 'undefined' && url.includes('youtube.com')) {
-      try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        const proxyRes = await fetch(proxyUrl, { signal: controller.signal });
-        if (proxyRes.ok) {
-          return await proxyRes.text();
+      const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      ];
+      for (const proxyUrl of proxies) {
+        try {
+          const proxyRes = await fetch(proxyUrl, { signal: controller.signal });
+          if (proxyRes.ok) {
+            const text = await proxyRes.text();
+            if (text && text.includes('ytInitialData')) return text;
+          }
+        } catch {
+          /* try next proxy */
         }
-      } catch {
-        /* proxy fallback failed */
       }
     }
     throw err;
@@ -335,9 +342,122 @@ function mapYtRenderer(r: YtVideoRenderer): NormalizedMediaItem | null {
   };
 }
 
+async function ingestYouTubePublicApi(
+  playlistId: string
+): Promise<{ title: string; items: NormalizedMediaItem[] }> {
+  // Try Piped API instances
+  const pipedInstances = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.resonate.life',
+    'https://api.piped.private.coffee',
+  ];
+
+  for (const instance of pipedInstances) {
+    try {
+      const data = await fetchJson<{
+        title?: string;
+        relatedVideos?: Array<{
+          url?: string;
+          title?: string;
+          thumbnail?: string;
+          duration?: number;
+        }>;
+      }>(`${instance}/playlists/${encodeURIComponent(playlistId)}`);
+
+      if (data && Array.isArray(data.relatedVideos) && data.relatedVideos.length > 0) {
+        const items: NormalizedMediaItem[] = [];
+        for (const v of data.relatedVideos) {
+          const vIdMatch = v.url?.match(/v=([\w-]{6,})/);
+          const videoId = vIdMatch ? vIdMatch[1] : undefined;
+          const duration = typeof v.duration === 'number' ? v.duration : 0;
+          if (videoId && duration > 0) {
+            items.push({
+              id: scopedId('youtube', videoId),
+              sourceId: videoId,
+              source: 'youtube',
+              title: v.title ?? 'Untitled',
+              duration,
+              thumbnailUrl: v.thumbnail ?? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+              playbackUrl: `https://www.youtube.com/watch?v=${videoId}`,
+              isEmbeddable: true,
+            });
+          }
+        }
+        if (items.length > 0) {
+          return {
+            title: data.title ?? `YouTube playlist ${playlistId}`,
+            items: items.slice(0, MAX_ITEMS),
+          };
+        }
+      }
+    } catch {
+      /* try next instance */
+    }
+  }
+
+  // Try Invidious API instances
+  const invidiousInstances = [
+    'https://inv.tux.pizza',
+    'https://invidious.nerqv.ps',
+    'https://vid.puffyan.us',
+  ];
+
+  for (const instance of invidiousInstances) {
+    try {
+      const data = await fetchJson<{
+        title?: string;
+        videos?: Array<{
+          title?: string;
+          videoId?: string;
+          lengthSeconds?: number;
+          videoThumbnails?: Array<{ url: string }>;
+        }>;
+      }>(`${instance}/api/v1/playlists/${encodeURIComponent(playlistId)}`);
+
+      if (data && Array.isArray(data.videos) && data.videos.length > 0) {
+        const items: NormalizedMediaItem[] = [];
+        for (const v of data.videos) {
+          const videoId = v.videoId;
+          const duration = typeof v.lengthSeconds === 'number' ? v.lengthSeconds : 0;
+          if (videoId && duration > 0) {
+            const thumb = v.videoThumbnails?.[0]?.url ?? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+            items.push({
+              id: scopedId('youtube', videoId),
+              sourceId: videoId,
+              source: 'youtube',
+              title: v.title ?? 'Untitled',
+              duration,
+              thumbnailUrl: thumb,
+              playbackUrl: `https://www.youtube.com/watch?v=${videoId}`,
+              isEmbeddable: true,
+            });
+          }
+        }
+        if (items.length > 0) {
+          return {
+            title: data.title ?? `YouTube playlist ${playlistId}`,
+            items: items.slice(0, MAX_ITEMS),
+          };
+        }
+      }
+    } catch {
+      /* try next instance */
+    }
+  }
+
+  throw new Error('Public APIs returned no items for this playlist.');
+}
+
 async function ingestYouTubeScrape(
   playlistId: string
 ): Promise<{ title: string; items: NormalizedMediaItem[] }> {
+  // First attempt CORS-friendly public APIs (Piped / Invidious)
+  try {
+    return await ingestYouTubePublicApi(playlistId);
+  } catch {
+    /* fallback to HTML page scraping via CORS proxies */
+  }
+
   const html = await fetchText(
     `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}&hl=en`,
     { headers: { Accept: 'text/html' } }
