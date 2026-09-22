@@ -356,60 +356,58 @@ function mapYtRenderer(r: YtVideoRenderer): NormalizedMediaItem | null {
   };
 }
 
-async function ingestYouTubePublicApi(
-  playlistId: string
-): Promise<{ title: string; items: NormalizedMediaItem[] }> {
-  // Try Piped API instances
-  const pipedInstances = [
-    'https://pipedapi.kavin.rocks',
-    'https://pipedapi.resonate.life',
-    'https://api.piped.private.coffee',
+async function fetchYouTubeHtml(playlistId: string): Promise<string> {
+  const targetUrl = `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}&hl=en`;
+
+  // 1) Direct fetch (works server-side or if CORS permits)
+  try {
+    const text = await fetchText(targetUrl, { headers: { Accept: 'text/html' } });
+    if (text.includes('ytInitialData')) return text;
+  } catch {
+    /* proceed */
+  }
+
+  // 2) JSON-wrapped proxy (allorigins.win) — returns CORS-friendly JSON wrapping the HTML!
+  try {
+    const jsonUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+    const res = await fetch(jsonUrl);
+    if (res.ok) {
+      const data = (await res.json()) as { contents?: string };
+      if (data.contents && data.contents.includes('ytInitialData')) {
+        return data.contents;
+      }
+    }
+  } catch {
+    /* proceed */
+  }
+
+  // 3) Additional CORS proxies
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
   ];
 
-  for (const instance of pipedInstances) {
+  for (const proxyUrl of proxies) {
     try {
-      const data = await fetchJson<{
-        title?: string;
-        relatedVideos?: Array<{
-          url?: string;
-          title?: string;
-          thumbnail?: string;
-          duration?: number;
-        }>;
-      }>(`${instance}/playlists/${encodeURIComponent(playlistId)}`);
-
-      if (data && Array.isArray(data.relatedVideos) && data.relatedVideos.length > 0) {
-        const items: NormalizedMediaItem[] = [];
-        for (const v of data.relatedVideos) {
-          const vIdMatch = v.url?.match(/v=([\w-]{6,})/);
-          const videoId = vIdMatch ? vIdMatch[1] : undefined;
-          const duration = typeof v.duration === 'number' ? v.duration : 0;
-          if (videoId && duration > 0) {
-            items.push({
-              id: scopedId('youtube', videoId),
-              sourceId: videoId,
-              source: 'youtube',
-              title: v.title ?? 'Untitled',
-              duration,
-              thumbnailUrl: v.thumbnail ?? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-              playbackUrl: `https://www.youtube.com/watch?v=${videoId}`,
-              isEmbeddable: true,
-            });
-          }
-        }
-        if (items.length > 0) {
-          return {
-            title: data.title ?? `YouTube playlist ${playlistId}`,
-            items: items.slice(0, MAX_ITEMS),
-          };
+      const res = await fetch(proxyUrl);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.includes('ytInitialData')) {
+          return text;
         }
       }
     } catch {
-      /* try next instance */
+      /* try next */
     }
   }
 
-  // Try Invidious API instances
+  throw new Error('Could not fetch YouTube playlist HTML.');
+}
+
+async function ingestYouTubePublicApi(
+  playlistId: string
+): Promise<{ title: string; items: NormalizedMediaItem[] }> {
+  // Invidious API instances
   const invidiousInstances = [
     'https://inv.tux.pizza',
     'https://invidious.nerqv.ps',
@@ -465,45 +463,48 @@ async function ingestYouTubePublicApi(
 async function ingestYouTubeScrape(
   playlistId: string
 ): Promise<{ title: string; items: NormalizedMediaItem[] }> {
-  // First attempt CORS-friendly public APIs (Piped / Invidious)
+  // Primary Strategy: HTML extraction via JSON-wrapped CORS proxy (allorigins) & CORS proxies
+  try {
+    const html = await fetchYouTubeHtml(playlistId);
+    const data = extractBalancedJson(html, 'var ytInitialData');
+    if (data) {
+      const renderers: any[] = [];
+      collectRenderers(data, 'playlistVideoRenderer', renderers);
+      const lockups: any[] = [];
+      collectRenderers(data, 'lockupViewModel', lockups);
+      const items: NormalizedMediaItem[] = [];
+      const seen = new Set<string>();
+      const push = (item: NormalizedMediaItem | null) => {
+        if (item && !seen.has(item.id)) {
+          seen.add(item.id);
+          items.push(item);
+        }
+      };
+      for (const r of renderers as YtVideoRenderer[]) push(mapYtRenderer(r));
+      for (const l of lockups as YtLockup[]) push(mapYtLockup(l));
+      if (items.length > 0) {
+        const capped = items.slice(0, MAX_ITEMS);
+        const titleMatch = html.match(/<title>(.*?)<\/title>/);
+        const rawTitle = titleMatch
+          ? titleMatch[1].replace(/ - YouTube$/, '').replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+          : `YouTube playlist ${playlistId}`;
+        return { title: rawTitle || `YouTube playlist ${playlistId}`, items: capped };
+      }
+    }
+  } catch {
+    /* proceed to public API fallback */
+  }
+
+  // Secondary Strategy: Invidious Public REST API
   try {
     return await ingestYouTubePublicApi(playlistId);
   } catch {
-    /* fallback to HTML page scraping via CORS proxies */
+    /* proceed to error */
   }
 
-  const html = await fetchText(
-    `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}&hl=en`,
-    { headers: { Accept: 'text/html' } }
+  throw new Error(
+    'Playlist fetch unfulfilled. For guaranteed 100% resolution of YouTube playlists without CORS issues, enter a YouTube API key in Control Room → Playback.'
   );
-  const data = extractBalancedJson(html, 'var ytInitialData');
-  if (!data) throw new Error('YouTube playlist page could not be parsed (ytInitialData missing).');
-   
-  const renderers: any[] = [];
-  collectRenderers(data, 'playlistVideoRenderer', renderers);
-  const lockups: any[] = [];
-  collectRenderers(data, 'lockupViewModel', lockups);
-  const items: NormalizedMediaItem[] = [];
-  const seen = new Set<string>();
-  const push = (item: NormalizedMediaItem | null) => {
-    if (item && !seen.has(item.id)) {
-      seen.add(item.id);
-      items.push(item);
-    }
-  };
-  for (const r of renderers as YtVideoRenderer[]) push(mapYtRenderer(r));
-  for (const l of lockups as YtLockup[]) push(mapYtLockup(l));
-  if (items.length === 0) {
-    throw new Error(
-      'No playable videos found in this YouTube playlist. It may be empty, private, or consist of live/unavailable entries.'
-    );
-  }
-  const capped = items.slice(0, MAX_ITEMS);
-  const titleMatch = html.match(/<title>(.*?)<\/title>/);
-  const rawTitle = titleMatch
-    ? titleMatch[1].replace(/ - YouTube$/, '').replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    : `YouTube playlist ${playlistId}`;
-  return { title: rawTitle || `YouTube playlist ${playlistId}`, items: capped };
 }
 
 async function ingestYouTubeApi(
