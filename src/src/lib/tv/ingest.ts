@@ -124,19 +124,33 @@ export function parseTargetUrl(rawUrl: string): ParsedTarget | null {
       const id = path.slice(1).split('/')[0];
       if (id) return { source: 'youtube', kind: 'video', id, canonicalUrl: `https://www.youtube.com/watch?v=${id}` };
     }
-    const listParam = url.searchParams.get('list');
-    const videoParam = url.searchParams.get('v');
-    if (listParam && (path === '/playlist' || videoParam)) {
-      // Ignore radio / watch-later pseudo-playlists
-      if (/^(RD|WL|LL|UL)/.test(listParam) && path === '/playlist') {
-        // still attempt — scrape will fail gracefully for RD mixes
+
+    let listParam = url.searchParams.get('list');
+    if (!listParam) {
+      const showOrCourseMatch = path.match(/^\/(?:show|course|playlist)\/([\w-]+)/i);
+      if (showOrCourseMatch) {
+        listParam = showOrCourseMatch[1];
       }
-      return { source: 'youtube', kind: 'playlist', id: listParam, canonicalUrl: `https://www.youtube.com/playlist?list=${listParam}` };
     }
+
+    if (listParam) {
+      const cleanListId = listParam.startsWith('VL') && /^VL(PL|EC|OL|FL|LL|UU|RD)/i.test(listParam)
+        ? listParam.slice(2)
+        : listParam;
+
+      return {
+        source: 'youtube',
+        kind: 'playlist',
+        id: cleanListId,
+        canonicalUrl: `https://www.youtube.com/playlist?list=${cleanListId}`,
+      };
+    }
+
     const shorts = path.match(/^\/shorts\/([\w-]{6,})/);
     if (shorts) return { source: 'youtube', kind: 'video', id: shorts[1], canonicalUrl: `https://www.youtube.com/watch?v=${shorts[1]}` };
     const embed = path.match(/^\/embed\/([\w-]{6,})/);
     if (embed) return { source: 'youtube', kind: 'video', id: embed[1], canonicalUrl: `https://www.youtube.com/watch?v=${embed[1]}` };
+    const videoParam = url.searchParams.get('v');
     if (videoParam) return { source: 'youtube', kind: 'video', id: videoParam, canonicalUrl: `https://www.youtube.com/watch?v=${videoParam}` };
     return null;
   }
