@@ -26,6 +26,7 @@ import { Sidebar } from './Sidebar';
 import { VideoCard } from './VideoCard';
 import { UpNextSidebar } from './UpNextSidebar';
 import { ThemeCustomizer } from './ThemeCustomizer';
+import { CorsPromptModal } from './CorsPromptModal';
 import { OSDBanner, OSDDigits, OSDNow, OSDTop, OSDVolume } from './OSD';
 import { createDemoChannels } from './demo-data';
 import { staticSynth } from '@/lib/tv/static-synth';
@@ -954,6 +955,9 @@ export default function TVClient() {
 
       {/* Floating Theme & Mode Button (Bottom-Left Corner) */}
       <ThemeCustomizer />
+
+      {/* Global CORS Bypass Prompt Modal */}
+      <CorsPromptModal />
     </div>
   );
 }

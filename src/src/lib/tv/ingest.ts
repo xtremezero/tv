@@ -18,6 +18,35 @@ import type {
   PlaylistDefinition,
   VideoSource,
 } from './types';
+import { useTVStore } from './store';
+
+export class CorsError extends Error {
+  url?: string;
+  constructor(message?: string, url?: string) {
+    super(
+      message ||
+        'Cross-Origin (CORS) request blocked by browser. Please install the Access-Control-Allow-Origin extension: https://webextension.org/listing/access-control.html'
+    );
+    this.name = 'CorsError';
+    this.url = url;
+  }
+}
+
+export function isCorsError(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof CorsError) return true;
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  const name = err instanceof Error ? err.name : '';
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('cors') ||
+    msg.includes('cross-origin') ||
+    msg.includes('networkerror') ||
+    msg.includes('load failed') ||
+    msg.includes('access-control-allow-origin') ||
+    (name === 'TypeError' && (msg.includes('fetch') || msg.includes('network')))
+  );
+}
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -28,14 +57,22 @@ const MAX_ITEMS = 150;
 // TTL cache — aggressive caching prevents quota exhaustion (YouTube 10k units)
 // ---------------------------------------------------------------------------
 
-const cacheTtlMs = 24 * 60 * 60 * 1000;
-const ingestionCache = new Map<string, { at: number; data: PlaylistDefinition }>();
+interface CacheEntry {
+  at: number;
+  data: PlaylistDefinition;
+}
 
-function cacheGet(key: string): PlaylistDefinition | null {
-  const hit = ingestionCache.get(key);
-  if (hit && Date.now() - hit.at < cacheTtlMs) return hit.data;
-  if (hit) ingestionCache.delete(key);
-  return null;
+const ingestionCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes
+
+function cacheGet(key: string): PlaylistDefinition | undefined {
+  const entry = ingestionCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.at > CACHE_TTL_MS) {
+    ingestionCache.delete(key);
+    return undefined;
+  }
+  return entry.data;
 }
 
 function cacheSet(key: string, data: PlaylistDefinition): void {
@@ -76,6 +113,19 @@ async function fetchText(url: string, init?: RequestInit): Promise<string> {
           /* try next proxy */
         }
       }
+    }
+    if (isCorsError(err)) {
+      if (typeof window !== 'undefined') {
+        try {
+          useTVStore.getState().triggerCorsModal(url);
+        } catch {
+          /* ignore if store not initialized */
+        }
+      }
+      throw new CorsError(
+        `Cross-Origin (CORS) request blocked for ${url}. Please install extension: https://webextension.org/listing/access-control.html`,
+        url
+      );
     }
     throw err;
   } finally {

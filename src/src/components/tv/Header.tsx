@@ -1,6 +1,7 @@
 'use client';
 
-import { Menu, Search, Plus, ListVideo, Tv, Volume2, VolumeX, X, Sparkles } from 'lucide-react';
+import { Menu, Search, Plus, ListVideo, Tv, Volume2, VolumeX, X, Sparkles, ShieldAlert } from 'lucide-react';
+import { useTVStore } from '@/lib/tv/store';
 
 interface HeaderProps {
   sidebarOpen: boolean;
@@ -102,6 +103,14 @@ export function Header({
             Demo Broadcast
           </button>
         )}
+
+        <button
+          onClick={() => useTVStore.getState().triggerCorsModal()}
+          className="rounded-full p-2.5 text-foreground transition-colors hover:bg-secondary"
+          title="Fix Cross-Origin (CORS) Errors / Install Extension"
+        >
+          <ShieldAlert className="h-5 w-5 text-red-500" />
+        </button>
 
         <button
           onClick={onOpenEPG}

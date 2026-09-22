@@ -11,6 +11,7 @@ import {
   Loader2,
   Plus,
   RotateCcw,
+  ShieldAlert,
   Shuffle,
   Trash2,
   Upload,
@@ -106,10 +107,13 @@ export function SettingsPanel({
 
       if (!playlist) {
         // Fall back to client-side ingestion engine
-        const { ingestPlaylist } = await import('@/lib/tv/ingest');
+        const { ingestPlaylist, isCorsError } = await import('@/lib/tv/ingest');
         try {
           playlist = await ingestPlaylist(url.trim(), youTubeApiKey || undefined);
         } catch (err) {
+          if (isCorsError(err)) {
+            useTVStore.getState().triggerCorsModal(url.trim());
+          }
           errorMsg = err instanceof Error ? err.message : 'Client-side ingestion failed.';
         }
       }
@@ -123,8 +127,11 @@ export function SettingsPanel({
       } else {
         setFetchErrors((prev) => ({ ...prev, [channelId]: errorMsg ?? 'Ingestion failed.' }));
       }
-    } catch {
-      setFetchErrors((prev) => ({ ...prev, [channelId]: 'Network error while fetching playlist.' }));
+    } catch (err) {
+      if (err instanceof Error && (err.message.includes('CORS') || err.message.includes('fetch'))) {
+        useTVStore.getState().triggerCorsModal(url.trim());
+      }
+      setFetchErrors((prev) => ({ ...prev, [channelId]: 'Network or CORS error while fetching playlist.' }));
     } finally {
       setFetchingUrl(null);
     }
@@ -580,9 +587,19 @@ function ChannelCard({
             </Button>
           </div>
           {fetchError && (
-            <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-2.5 font-sans text-xs text-destructive">
-              {fetchError}
-            </p>
+            <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-2.5 font-sans text-xs text-destructive space-y-2">
+              <p>{fetchError}</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => useTVStore.getState().triggerCorsModal()}
+                className="h-7 text-[11px] font-semibold bg-background/80 hover:bg-background border-destructive/40 text-foreground flex items-center gap-1.5"
+              >
+                <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
+                Fix CORS Error (Install Extension)
+              </Button>
+            </div>
           )}
           <p className="font-sans text-[11px] text-muted-foreground leading-normal">
             Playlist order sets the interleave rotation (A, B, C → A1·B1·C1…). Weight ×2 plays two consecutive items per cycle.

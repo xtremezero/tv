@@ -21,6 +21,12 @@ interface TVState {
   themeMode: 'dark' | 'light';
   accentColor: 'red' | 'emerald' | 'cyan' | 'amber' | 'purple';
 
+  corsModalOpen: boolean;
+  corsErrorUrl: string | null;
+
+  triggerCorsModal: (url?: string) => void;
+  closeCorsModal: () => void;
+
   addChannel: (channel: ChannelConfig) => void;
   updateChannel: (id: string, updates: Partial<ChannelConfig>) => void;
   removeChannel: (id: string) => void;
@@ -67,6 +73,12 @@ export const useTVStore = create<TVState>()(
       youTubeApiKey: '',
       themeMode: 'dark',
       accentColor: 'red',
+
+      corsModalOpen: false,
+      corsErrorUrl: null,
+
+      triggerCorsModal: (url) => set({ corsModalOpen: true, corsErrorUrl: url ?? null }),
+      closeCorsModal: () => set({ corsModalOpen: false, corsErrorUrl: null }),
 
       addChannel: (channel) =>
         set((state) => ({ channels: [...state.channels, channel] })),
@@ -212,6 +224,10 @@ export const useTVStore = create<TVState>()(
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       version: 1,
+      partialize: (state) => {
+        const { corsModalOpen, corsErrorUrl, ...rest } = state;
+        return rest;
+      },
     }
   )
 );
